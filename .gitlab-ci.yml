@@ -1,63 +1,45 @@
-image: php:8.0.12-cli
-
-stages:          
-  - build
-  - test
-  - deploy
-
-cache:
-  key: "$CI_COMMIT_REF_NAME"
-  paths:
-    - vendor/
+stages:
+  - test_unitaire
+  - test_integration
+  - analyse_sonar
+  - verification_quality_gate
 
 variables:
   SONAR_TOKEN: "989c7a1c5ab516c4f1f075255da3fa8d26d14c05"
 
 before_script:
-  - test -d vendor || apt-get update -yqq
-  - test -d vendor || apt-get install -yqq 
-  - test -d vendor || curl -sS https://getcomposer.org/installer | php
-  - test -d vendor || php composer.phar install
+  - apt-get update -qy
+  - apt-get install -y openjdk-11-jre
+  - apt-get install -y php-cli php-xml
+  - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  - composer install
 
-build-job:       # This job runs in the build stage, which runs first.
-  stage: build
+test_unitaire:
+  stage: test_unitaire
   script:
-    - echo "Compiling the code..."
-    - echo "Compile complete."
-
-test:
-  stage: test
-  script:
-   - vendor/bin/phpunit --coverage-clover=coverage.xml tests
-  allow_failure: true
+    - vendor/bin/phpunit --coverage-html coverage/unit_coverage.xml tests/unitTests
   artifacts:
-    when: always
     paths:
-      - coverage.xml
+      - coverage/unit_coverage.xml
 
-lint-test-job:   
-  stage: test    
+test_integration:
+  stage: test_integration
   script:
-    - echo "Linting code... This will take about 10 seconds."
-    - sleep 10
-    - echo "No lint issues found."
+    - vendor/bin/phpunit --coverage-html coverage/coverage.xml tests/integrationTests
+  artifacts:
+    paths:
+      - coverage/coverage.xml
 
-sonarqube-check:
-  image: sonarsource/sonar-scanner-cli:latest
+analyse_sonar:
+  stage: analyse_sonar
   script:
-    - sonar-scanner
+    - sonar-scanner -Dsonar.login=$SONAR_TOKEN
+  only:
+    - master
 
-sonarqube_scan:
-  stage: sonarqube_scan
+verification_quality_gate:
+  stage: verification_quality_gate
   script:
-    - DownloadFile https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.0.2311-windows.zip -OutFile sonar-scanner-cli-4.6.0.2311-windows.zip
-    - Expand-Archive -Path sonar-scanner-cli-4.6.0.2311-windows.zip -DestinationPath $env:CI_PROJECT_DIR
-    - $env:PATH += ";$env:CI_PROJECT_DIR\sonar-scanner-cli-4.6.0.2311-windows\bin"
-    - sonar-scanner -Dsonar.projectKey=$env:CI_PROJECT_NAME -Dsonar.organization=jeremymartin87-1 -Dsonar.sources=src -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=$env:SONAR_TOKEN -Dsonar.php.coverage.reportPaths=coverage.xml
-
-deploy-job:      # This job runs in the deploy stage.
-  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
-  environment: production
-  script:
-    - echo "Deploying application..."
-    - echo "Application successfully deployed."
+    - sonar-scanner -Dsonar.login=$SONAR_TOKEN -Dsonar.qualitygate.wait=true
+  only:
+    - master
