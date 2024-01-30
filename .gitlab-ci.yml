@@ -1,0 +1,15 @@
+image: php:10.4-cli
+
+cache:
+  paths:
+    - vendor/
+
+before_script:
+  - apt-get update -yqq
+  - apt-get install -yqq curl
+  - curl -sS https://getcomposer.org/installer | php
+  - php composer.phar install
+
+test:
+  script:
+    -vendo/bin/phpunit tests
